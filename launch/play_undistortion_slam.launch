@@ -30,7 +30,7 @@
             -configuration_basename locobot.lua"
         output="screen">
         <remap from="/imu" to="/wit/imu" />
-        <remap from="/scan" to="/lidar_undistortion/scan" />
+        <remap from="/scan" to="/lidar_undistortion/scan" />+
         <remap from="/odom" to="/locobot/mobile_base/odom" />
     </node>
 
