@@ -43,5 +43,4 @@
     <!-- rosbag play -->
     <node name="player" pkg="rosbag" type="play" output="screen" args="--clock --rate=1.0 $(arg bagfile)" />
 
-
 </launch>
