@@ -1,1 +1,4 @@
 *.bag
+/data/depth/
+/data/color/
+/data/pose/

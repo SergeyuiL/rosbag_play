@@ -4,10 +4,11 @@ import rospy
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped
 
-bag_file = 'path_to_bag_file.bag'  # 此处需要指定具体的bag文件路径
+bag_file = '../rosbag/localization.bag'  # 此处需要指定具体的bag文件路径
 interested_topics = [
     "/tf_static",
     "/tf",
+    
     # 其他感兴趣的主题
 ]
 
