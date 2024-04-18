@@ -1,5 +1,6 @@
-*.bag
-/data/depth/
-/data/color/
-/data/pose/
-data/map/
+rosbag/*
+data/*
+# /data/depth/
+# /data/color/
+# /data/pose/
+# data/map/
