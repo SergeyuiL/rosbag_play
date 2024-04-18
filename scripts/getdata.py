@@ -20,7 +20,7 @@ def create_transformation_matrix(translation, rotation):
     T[:3, 3] = t
     return T
 
-bag_file = 'rosbag/newdata.bag'
+bag_file = 'rosbag/undist_spindata.bag'
 data_save_dir = 'data'
 
 interested_topics = [

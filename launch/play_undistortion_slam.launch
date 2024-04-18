@@ -1,6 +1,7 @@
 <launch>
     <param name="use_sim_time" value="true" />
-    <arg name="bagfile" default="$(find rosbag_play)/rosbag/newbag.bag"/>
+    <arg name="play_bagfile" default="$(find rosbag_play)/rosbag/spinbag.bag"/>
+    <arg name="save_bagfile" default="$(find rosbag_play)/rosbag/dist_spindata.bag"/>
     <arg name="record"  default="false"/>
     <arg name="undistortion" default="true"/>
 
@@ -49,9 +50,9 @@
     <include file="$(find interbotix_xslocobot_descriptions)/launch/remote_view.launch"/>
 
     <!-- rosbag record -->
-    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" args="--lz4 --repeat-latched -a -O $(find rosbag_play)/rosbag/newdata.bag" output="screen" />
+    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" args="--lz4 --repeat-latched -a -O $(arg save_bagfile)" output="screen" />
 
     <!-- rosbag play -->
-    <node name="player" pkg="rosbag" type="play" output="screen" args="--clock --rate=1.0 $(arg bagfile)" />
+    <node name="player" pkg="rosbag" type="play" output="screen" args="--clock --rate=1.0 $(arg play_bagfile)" />
 
 </launch>
