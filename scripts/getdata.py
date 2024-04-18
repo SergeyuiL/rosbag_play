@@ -20,8 +20,8 @@ def create_transformation_matrix(translation, rotation):
     T[:3, 3] = t
     return T
 
-bag_file = '../rosbag/localization.bag'
-data_save_dir = '../data'
+bag_file = 'rosbag/newdata.bag'
+data_save_dir = 'data'
 
 interested_topics = [
     "/locobot/camera/aligned_depth_to_color/camera_info",
@@ -67,4 +67,6 @@ with rosbag.Bag(bag_file, 'r') as bag:
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 np.savetxt(os.path.join(data_save_dir, 'pose', f"{image_count}.txt"), np.zeros((4,4)))  
             image_count += 1
+        print(image_count)
+    
 

@@ -1,6 +1,6 @@
 <launch>
     <param name="use_sim_time" value="true" />
-    <arg name="bagfile" default="$(find rosbag_play)/rosbag/locobot.bag"/>
+    <arg name="bagfile" default="$(find rosbag_play)/rosbag/newbag.bag"/>
     <arg name="record"  default="false"/>
 
     <!-- lidar undistortion -->
@@ -26,7 +26,7 @@
   </node>
 
     <!-- cartographer localization -->
-    <arg name="map_dir" default="$(find rosbag_play)/maps/719locobot"/>
+    <arg name="map_dir" default="$(find rosbag_play)/maps/newmap"/>
 
     <node name="cartographer_node" pkg="cartographer_ros"
         type="cartographer_node" args="
@@ -46,7 +46,7 @@
     <include file="$(find interbotix_xslocobot_descriptions)/launch/remote_view.launch"/>
 
     <!-- rosbag record -->
-    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" args="--lz4 --repeat-latched -a -O $(find rosbag_play)/rosbag/localization.bag" output="screen" />
+    <node if="$(arg record)" name="rosbag_record" pkg="rosbag" type="record" args="--lz4 --repeat-latched -a -O $(find rosbag_play)/rosbag/newdata.bag" output="screen" />
 
     <!-- rosbag play -->
     <node name="player" pkg="rosbag" type="play" output="screen" args="--clock --rate=1.0 $(arg bagfile)" />

@@ -11,7 +11,8 @@ tmux select-pane -t 0
 tmux send-keys "roscore" Enter
 
 tmux select-pane -t 1
+tmux send-keys "rm -rf data/" Enter
 tmux send-keys "sleep 2" Enter
-tmux send-keys "python3 getdata.py" Enter
+tmux send-keys "python3 scripts/getdata.py" Enter
 
 tmux -2 attach-session -t $session_name
