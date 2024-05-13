@@ -42,7 +42,7 @@
   sudo apt install tmux
   ```
 
-  运行完后会在同目录下生成data文件夹，包含处理后的文件
+  运行后会提示输入rosbag file的路径和目标data文件夹路径
 
   要关掉tmux会话，在任一tmux终端中输入：
 

@@ -9,6 +9,13 @@ import tf_conversions
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 import numpy as np
+import argparse
+
+parser = argparse.ArgumentParser(description="Process and save data from ROS bag files.")
+parser.add_argument('--bag_file', type=str, required=True, help='Path to the ROS bag file.')
+parser.add_argument('--data_save_dir', type=str, required=True, help='Directory to save the data.')
+
+args = parser.parse_args()
 
 def create_transformation_matrix(translation, rotation):
     quaternion = (rotation.x, rotation.y, rotation.z, rotation.w)
@@ -20,8 +27,8 @@ def create_transformation_matrix(translation, rotation):
     T[:3, 3] = t
     return T
 
-bag_file = 'rosbag/undist_data.bag'
-data_save_dir = 'data'
+bag_file = args.bag_file
+data_save_dir = args.data_save_dir
 
 interested_topics = [
     "/locobot/camera/aligned_depth_to_color/camera_info",
