@@ -1,5 +1,11 @@
 # 1、从rosbag中读取图像和位姿
 
+- (opt)录制rosbag
+
+  ```shell
+  rosbag record --lz4 --repeat-latched /tf /tf_static /locobot/camera/aligned_depth_to_color/camera_info /locobot/camera/aligned_depth_to_color/image_raw /locobot/camera/color/image_raw
+  ```
+
 - 安装编译工具
 
   ```shell
