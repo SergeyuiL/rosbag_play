@@ -5,6 +5,8 @@
 #include <string>
 #include <fstream>
 #include <filesystem>
+#include <map>
+#include <queue>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/serialization.hpp"
@@ -26,11 +28,8 @@ class PlaybackNode : public rclcpp::Node
 {
 public:
     PlaybackNode(const std::string & bag_filename, const std::string & data_dir)
-    : Node("playback_node"), data_directory_(data_dir), image_count_(0)
+    : Node("playback_node"), data_directory_(data_dir)
     {
-        depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/camera/depth/image_raw", 10);
-        rgb_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/camera/color/image_raw", 10);
-        info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("/camera/info", 10);
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
         timer_ = this->create_wall_timer(100ms, std::bind(&PlaybackNode::timer_callback, this));
@@ -42,84 +41,48 @@ public:
     }
 
 private:
+    struct ImageData {
+        cv::Mat image;
+        rclcpp::Time timestamp;
+    };
+
+    std::map<int, ImageData> depth_images;
+    std::map<int, ImageData> color_images;
+    std::map<int, geometry_msgs::msg::TransformStamped> poses;
+    int image_count_ = 0;
+
     void timer_callback()
     {
         while (reader_.has_next()) {
             auto msg = reader_.read_next();
 
-            if (msg->topic_name == "/camera/depth/image_raw" || msg->topic_name == "/camera/color/image_raw") {
-                publish_image(msg, msg->topic_name);
-            }
-            else if (msg->topic_name == "/camera/info" && !camera_info_saved_) {
-                publish_camera_info(msg);
-                camera_info_saved_ = true;
+            if (msg->topic_name == "/realsense2/aligned_depth_to_color/image_raw") {
+                store_image(msg, "/depth");
+            } else if (msg->topic_name == "/camera/color/image_raw") {
+                store_image(msg, "/color");
             }
             else if (msg->topic_name == "/tf" || msg->topic_name == "/tf_static") {
                 process_tf_message(msg);
             }
+
+            check_and_save_data();
         }
     }
 
-    void publish_image(const rosbag2_storage::SerializedBagMessageSharedPtr& msg, const std::string& topic_name)
+    void store_image(const rosbag2_storage::SerializedBagMessageSharedPtr& msg, const std::string& folder)
     {
         auto image_msg = std::make_shared<sensor_msgs::msg::Image>();
         rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
         serialization_.deserialize_message(&serialized_msg, image_msg.get());
 
-        if (topic_name == "/camera/depth/image_raw") {
-            depth_pub_->publish(*image_msg);
-        } else if (topic_name == "/camera/color/image_raw") {
-            rgb_pub_->publish(*image_msg);
-        }
-
-        save_image(image_msg, topic_name);
-        image_count_++;
-    }
-
-    void save_image(const sensor_msgs::msg::Image::SharedPtr& image_msg, const std::string& topic_name)
-    {
         cv::Mat image = cv_bridge::toCvCopy(image_msg, image_msg->encoding)->image;
-        std::string file_path = data_directory_ + (topic_name == "/camera/depth/image_raw" ? "/depth/" : "/color/") + std::to_string(image_count_) + ".png";
-        cv::imwrite(file_path, image);
-    }
-
-    void publish_camera_info(const rosbag2_storage::SerializedBagMessageSharedPtr& msg)
-    {
-        auto info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
-        rclcpp::SerializedMessage serialized_msg(*msg->serialized_data);
-        serialization_.deserialize_message(&serialized_msg, info_msg.get());
-        info_pub_->publish(*info_msg);
-        save_camera_info(info_msg);
-    }
-
-    void save_camera_info(const sensor_msgs::msg::CameraInfo::SharedPtr& info_msg)
-    {
-        std::ofstream file(data_directory_ + "/camera_info.json");
-        if (file.is_open()) {
-            file << "{\n";
-            file << "  \"width\": " << info_msg->width << ",\n";
-            file << "  \"height\": " << info_msg->height << ",\n";
-            file << "  \"distortion_model\": \"" << info_msg->distortion_model << "\",\n";
-            file << "  \"D\": [" << join(info_msg->d, ", ") << "],\n";
-            file << "  \"K\": [" << join(info_msg->k, ", ") << "],\n";
-            file << "  \"R\": [" << join(info_msg->r, ", ") << "],\n";
-            file << "  \"P\": [" << join(info_msg->p, ", ") << "]\n";
-            file << "}\n";
-            file.close();
+        if (folder == "/depth") {
+            depth_images[image_count_].image = image;
+            depth_images[image_count_].timestamp = image_msg->header.stamp;
+        } else if (folder == "/color") {
+            color_images[image_count_].image = image;
+            color_images[image_count_].timestamp = image_msg->header.stamp;
         }
-    }
-
-    template<typename T>
-    std::string join(const std::vector<T>& vec, const std::string& delim)
-    {
-        std::ostringstream oss;
-        for (size_t i = 0; i < vec.size(); ++i) {
-            if (i != 0) {
-                oss << delim;
-            }
-            oss << vec[i];
-        }
-        return oss.str();
     }
 
     void process_tf_message(const rosbag2_storage::SerializedBagMessageSharedPtr& msg)
@@ -130,8 +93,23 @@ private:
 
         for (auto& transform : tf_msg->transforms) {
             if (transform.header.frame_id == "map" && transform.child_frame_id == "realsense2_color_optical_frame") {
-                save_pose(transform);
+                poses[image_count_] = transform;
             }
+        }
+    }
+
+    void check_and_save_data() {
+        if (depth_images.find(image_count_) != depth_images.end() && color_images.find(image_count_) != color_images.end() && poses.find(image_count_) != poses.end()) {
+            // Save images and pose
+            cv::imwrite(data_directory_ + "/depth/" + std::to_string(image_count_) + ".png", depth_images[image_count_].image);
+            cv::imwrite(data_directory_ + "/color/" + std::to_string(image_count_) + ".png", color_images[image_count_].image);
+            save_pose(poses[image_count_]);
+
+            // Remove the used data to prevent memory overflow
+            depth_images.erase(image_count_);
+            color_images.erase(image_count_);
+            poses.erase(image_count_);
+            image_count_++;
         }
     }
 
@@ -146,16 +124,12 @@ private:
     }
 
     rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_pub_, rgb_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_pub_;
     rclcpp::Serialization<sensor_msgs::msg::Image> serialization_;
     rclcpp::Serialization<tf2_msgs::msg::TFMessage> tf_serialization_;
     rosbag2_cpp::readers::SequentialReader reader_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::string data_directory_;
-    int image_count_;
-    bool camera_info_saved_ = false;
 };
 
 int main(int argc, char ** argv)
