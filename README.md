@@ -9,7 +9,7 @@
 - Installing Compilation Tools
 
   ```shell
-  sudo apt install -y python-wstool python3-catkin-tools
+  sudo apt install -y python3-wstool python3-catkin-tools
   ```
 
 - Creating a ROS Workspace
