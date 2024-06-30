@@ -11,28 +11,12 @@ from sensor_msgs.msg import Image, CameraInfo
 import numpy as np
 import argparse
 import json
-import shutil
 
 parser = argparse.ArgumentParser(description="Process and save data from ROS bag files.")
 parser.add_argument('--bag_file', type=str, required=True, help='Path to the ROS bag file.')
 parser.add_argument('--data_save_dir', type=str, required=True, help='Directory to save the data.')
 
 args = parser.parse_args()
-
-def clear_dir(data_dir):
-    if not os.path.exists(data_dir):
-        print(f"The directory {data_dir} does not exist.")
-        return
-    
-    for filename in os.listdir(data_dir):
-        file_path = os.path.join(data_dir, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)  
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)  
-        except Exception as e:
-            print(f"Failed to delete {file_path}. Reason: {e}")
 
 def create_transformation_matrix(translation, rotation):
     quaternion = (rotation.x, rotation.y, rotation.z, rotation.w)
@@ -44,20 +28,8 @@ def create_transformation_matrix(translation, rotation):
     T[:3, 3] = t
     return T
 
-def convert_to_pose(T):
-    x, y = T[0, 3], T[1, 3]
-    yaw = np.arctan2(T[1, 0], T[0, 0])  # Extract yaw from rotation matrix
-    return x, y, yaw
-
-def calculate_distance(pose1, pose2):
-    return np.sqrt((pose2[0] - pose1[0])**2 + (pose2[1] - pose1[1])**2)
-
 bag_file = args.bag_file
 data_save_dir = args.data_save_dir
-# bag_file = "/root/catkin_ws/src/rosbag_play/rosbag/room_1004.bag"
-# data_save_dir = "/root/catkin_ws/src/rosbag_play/data/room_1004"
-
-clear_dir(data_save_dir)
 
 interested_topics = [
     "/locobot/camera/aligned_depth_to_color/camera_info",
@@ -67,7 +39,7 @@ interested_topics = [
     "/tf_static"
 ]
 
-for directory in ['rgb', 'depth']:
+for directory in ['color', 'depth', 'pose']:
     os.makedirs(os.path.join(data_save_dir, directory), exist_ok=True)
 
 tf_buffer = tf2_ros.Buffer()
@@ -75,10 +47,6 @@ bridge = CvBridge()
 image_count = 0  
 
 camera_info_saved = False
-last_pose = None
-interval_trans = 0.2  # meter
-interval_yaw = 0.1  # rad
-pose_file = os.path.join(data_save_dir, "node_pose.txt")
 
 with rosbag.Bag(bag_file, 'r') as bag:
     for topic, msg, t in bag.read_messages(topics=interested_topics):
@@ -93,7 +61,7 @@ with rosbag.Bag(bag_file, 'r') as bag:
         
         elif topic == "/locobot/camera/color/image_raw":
             color_img = bridge.imgmsg_to_cv2(msg, 'bgr8')
-            image_path = os.path.join(data_save_dir, 'rgb', f"rgb_{image_count}.png")
+            image_path = os.path.join(data_save_dir, 'color', f"rgb_{image_count}.png")
             cv2.imwrite(image_path, color_img)
         
         elif topic == "/locobot/camera/aligned_depth_to_color/image_raw":
@@ -102,27 +70,12 @@ with rosbag.Bag(bag_file, 'r') as bag:
             cv2.imwrite(image_path, depth_img)
             
             try:
-                # 'locobot/camera_color_optical_frame'
-                transform_stamped = tf_buffer.lookup_transform('map', 'locobot/base_footprint', rospy.Time(0))
+                transform_stamped = tf_buffer.lookup_transform('map', 'locobot/camera_color_optical_frame', rospy.Time(0))
                 T = create_transformation_matrix(transform_stamped.transform.translation, transform_stamped.transform.rotation)
-                current_pose = convert_to_pose(T)
-                if current_pose is not None:
-                    if last_pose is None:
-                        with open(pose_file, 'a') as f:
-                            f.write(f"{image_count} {current_pose[0]:.4f} {current_pose[1]:.4f} {current_pose[2]:.4f}\n")
-                        last_pose = current_pose
-                        print(image_count)
-                        image_count += 1
-                    else:
-                        distance = calculate_distance(last_pose, current_pose)
-                        if distance > interval_trans or np.abs(current_pose[2] - last_pose[2]) > interval_yaw:
-                            with open(pose_file, 'a') as f:
-                                f.write(f"{image_count} {current_pose[0]:.4f} {current_pose[1]:.4f} {current_pose[2]:.4f}\n")
-                            print(image_count)
-                            image_count += 1   
-                            last_pose = current_pose
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-                print(e)  
+                np.savetxt(os.path.join(data_save_dir, 'pose', f"{image_count}.txt"), T)
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                np.savetxt(os.path.join(data_save_dir, 'pose', f"{image_count}.txt"), np.zeros((4,4)))  
+            image_count += 1
             
         elif topic == "/locobot/camera/aligned_depth_to_color/camera_info" and not camera_info_saved:
             camera_info = {
@@ -151,8 +104,6 @@ with rosbag.Bag(bag_file, 'r') as bag:
             with open(os.path.join(data_save_dir, 'camera_info.json'), 'w') as f:
                 json.dump(camera_info, f, indent=4)
             camera_info_saved = True  
-
-os.remove(os.path.join(data_save_dir, 'rgb', f"rgb_{image_count}.png"))    
-os.remove(os.path.join(data_save_dir, 'depth', f"depth_{image_count}.png"))  
+        print(image_count)
     
 
