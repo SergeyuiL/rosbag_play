@@ -12,6 +12,7 @@ import numpy as np
 import argparse
 import json
 import shutil
+import csv
 
 parser = argparse.ArgumentParser(description="Process and save data from ROS bag files.")
 parser.add_argument('--bag_file', type=str, required=True, help='Path to the ROS bag file.')
@@ -44,13 +45,24 @@ def create_transformation_matrix(translation, rotation):
     T[:3, 3] = t
     return T
 
-def convert_to_pose(T):
-    x, y = T[0, 3], T[1, 3]
-    yaw = np.arctan2(T[1, 0], T[0, 0])  # Extract yaw from rotation matrix
-    return x, y, yaw
+# def convert_to_pose(T):
+#     x, y = T[0, 3], T[1, 3]
+#     yaw = np.arctan2(T[1, 0], T[0, 0])  # Extract yaw from rotation matrix
+#     return x, y, yaw
 
 def calculate_distance(pose1, pose2):
     return np.sqrt((pose2[0] - pose1[0])**2 + (pose2[1] - pose1[1])**2)
+
+def calculate_distance(T1, T2):
+    pos1 = T1[:3, 3]
+    pos2 = T2[:3, 3]
+    return np.linalg.norm(pos2 - pos1)
+
+def calculate_rotation_diff(T1, T2):
+    R_diff = np.dot(T1[:3, :3].T, T2[:3, :3])
+    trace = np.trace(R_diff)
+    angle = np.arccos((trace - 1) / 2)
+    return angle
 
 bag_file = args.bag_file
 data_save_dir = args.data_save_dir
@@ -60,9 +72,9 @@ data_save_dir = args.data_save_dir
 clear_dir(data_save_dir)
 
 interested_topics = [
-    "/locobot/camera/aligned_depth_to_color/camera_info",
-    "/locobot/camera/aligned_depth_to_color/image_raw",
-    "/locobot/camera/color/image_raw",
+    "/d455/aligned_depth_to_color/camera_info",
+    "/d455/aligned_depth_to_color/image_raw",
+    "/d455/color/image_raw",
     "/tf",
     "/tf_static"
 ]
@@ -76,9 +88,11 @@ image_count = 0
 
 camera_info_saved = False
 last_pose = None
-interval_trans = 0.2  # meter
-interval_yaw = 0.1  # rad
+interval_trans = 0.25  # meter
+interval_yaw = 30.0 / 180.0 * 3.14  # rad
 pose_file = os.path.join(data_save_dir, "node_pose.txt")
+with open(pose_file, 'w') as f:
+    pass
 
 with rosbag.Bag(bag_file, 'r') as bag:
     for topic, msg, t in bag.read_messages(topics=interested_topics):
@@ -91,40 +105,48 @@ with rosbag.Bag(bag_file, 'r') as bag:
             for transform in msg.transforms:
                 tf_buffer.set_transform_static(transform, "default_authority")
         
-        elif topic == "/locobot/camera/color/image_raw":
+        elif topic == "/d455/color/image_raw":
             color_img = bridge.imgmsg_to_cv2(msg, 'bgr8')
             image_path = os.path.join(data_save_dir, 'rgb', f"rgb_{image_count}.png")
             cv2.imwrite(image_path, color_img)
         
-        elif topic == "/locobot/camera/aligned_depth_to_color/image_raw":
+        elif topic == "/d455/aligned_depth_to_color/image_raw":
             depth_img = bridge.imgmsg_to_cv2(msg, 'passthrough')
             image_path = os.path.join(data_save_dir, 'depth', f"depth_{image_count}.png")
             cv2.imwrite(image_path, depth_img)
             
             try:
-                # 'locobot/camera_color_optical_frame'
-                transform_stamped = tf_buffer.lookup_transform('map', 'locobot/base_footprint', rospy.Time(0))
+                transform_stamped = tf_buffer.lookup_transform('t265_odom_frame', 'd455_color_optical_frame', rospy.Time(0))
                 T = create_transformation_matrix(transform_stamped.transform.translation, transform_stamped.transform.rotation)
-                current_pose = convert_to_pose(T)
-                if current_pose is not None:
+                
+                if T is not None:
                     if last_pose is None:
-                        with open(pose_file, 'a') as f:
-                            f.write(f"{image_count} {current_pose[0]:.4f} {current_pose[1]:.4f} {current_pose[2]:.4f}\n")
-                        last_pose = current_pose
-                        print(image_count)
+                        with open(pose_file, 'a', newline='') as f:
+                            writer = csv.writer(f, delimiter=' ')
+                            matrix_elements = [image_count] + [T[i, j] for i in range(3) for j in range(4)]
+                            writer.writerow(matrix_elements)
+                        # with open(pose_file, 'a') as f:
+                        #     matrix_elements = ' '.join([f"{T[i, j]:.6f}" for i in range(3) for j in range(4)])
+                        #     f.write(f"{image_count} {matrix_elements}\n")
+                        last_pose = T
+                        print(f"Saved pose {image_count}")
                         image_count += 1
                     else:
-                        distance = calculate_distance(last_pose, current_pose)
-                        if distance > interval_trans or np.abs(current_pose[2] - last_pose[2]) > interval_yaw:
-                            with open(pose_file, 'a') as f:
-                                f.write(f"{image_count} {current_pose[0]:.4f} {current_pose[1]:.4f} {current_pose[2]:.4f}\n")
-                            print(image_count)
-                            image_count += 1   
-                            last_pose = current_pose
+                        distance = calculate_distance(last_pose, T)
+                        rotation_diff = calculate_rotation_diff(last_pose, T)
+                        if distance > interval_trans or rotation_diff > interval_yaw:
+                            with open(pose_file, 'a', newline='') as f:
+                                writer = csv.writer(f, delimiter=' ')
+                                matrix_elements = [image_count] + [T[i, j] for i in range(3) for j in range(4)]
+                                writer.writerow(matrix_elements)
+                            last_pose = T
+                            print(f"Saved pose {image_count}") 
+                            image_count += 1  
+                             
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
                 print(e)  
             
-        elif topic == "/locobot/camera/aligned_depth_to_color/camera_info" and not camera_info_saved:
+        elif topic == "/d455/aligned_depth_to_color/camera_info" and not camera_info_saved:
             camera_info = {
                 'header': {
                     'seq': msg.header.seq,
